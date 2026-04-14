@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { MODELS, DEFAULT_MODEL } from '@/components/model-selector'
+import { MODELS, DEFAULT_MODEL } from '@/lib/model-utils'
 import { createClient } from '@/lib/supabase/client'
 
 interface ApiKeys {

@@ -1,6 +1,8 @@
 import ChatArea from '@/components/chat-area'
 import { createClient } from '@/lib/supabase/server'
-import { DEFAULT_MODEL } from '@/components/model-selector'
+import { DEFAULT_MODEL, MODELS } from '@/lib/model-utils'
+
+const VALID_MODEL_IDS = new Set(MODELS.map((m) => m.id))
 
 export default async function NewChatPage() {
   const supabase = await createClient()
@@ -13,7 +15,7 @@ export default async function NewChatPage() {
     <ChatArea
       conversationId={null}
       initialMessages={[]}
-      defaultModel={settings?.default_model ?? DEFAULT_MODEL}
+      defaultModel={VALID_MODEL_IDS.has(settings?.default_model) ? settings!.default_model : DEFAULT_MODEL}
       apiKeys={{
         qwen: settings?.qwen_api_key ?? null,
         kimi: settings?.kimi_api_key ?? null,

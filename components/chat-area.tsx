@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import ModelSelector, { getProvider } from '@/components/model-selector'
+import ModelSelector from '@/components/model-selector'
+import { getProvider } from '@/lib/model-utils'
 import { createClient } from '@/lib/supabase/client'
 
 interface Message {
@@ -41,7 +42,7 @@ export default function ChatArea({
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const currentProvider = getProvider(model)
-  const hasApiKey = !!apiKeys[currentProvider] || currentProvider === 'glm'
+  const hasApiKey = currentProvider === 'ollama' || currentProvider === 'glm' || !!apiKeys[currentProvider as keyof ApiKeys]
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
@@ -59,10 +60,22 @@ export default function ChatArea({
   })
 
   const isLoading = status === 'streaming' || status === 'submitted'
+  const isInitialLoad = initialMessages.length === 0
+  const isWaitingForFirstResponse = isLoading && messages.length <= 1 && isInitialLoad
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Auto-send the first message after navigating from the new-chat page
+  useEffect(() => {
+    if (!conversationId) return
+    const pending = sessionStorage.getItem('nova-pending-message')
+    if (!pending) return
+    sessionStorage.removeItem('nova-pending-message')
+    sendMessage({ text: pending })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -94,10 +107,26 @@ export default function ChatArea({
         content: text,
       })
 
+      sessionStorage.setItem('nova-pending-message', text)
       router.push(`/chat/${data.id}`)
-      router.refresh()
+      return
     } else {
       const supabase = createClient()
+      // Update conversation title if it's still "New Conversation"
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('title')
+        .eq('id', currentConvId)
+        .single()
+
+      if (conversation?.title === 'New Conversation') {
+        const newTitle = text.slice(0, 60)
+        await supabase
+          .from('conversations')
+          .update({ title: newTitle })
+          .eq('id', currentConvId)
+      }
+
       await supabase.from('messages').insert({
         conversation_id: currentConvId,
         role: 'user',
@@ -108,6 +137,8 @@ export default function ChatArea({
     sendMessage({ text })
   }
 
+  const isNewConversation = (messages.length === 0 || isWaitingForFirstResponse) && hasApiKey
+
   return (
     <div className="flex h-full flex-col">
       {/* Model selector bar */}
@@ -116,86 +147,133 @@ export default function ChatArea({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4 py-6">
-        {!hasApiKey ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <p className="text-2xl font-semibold">Nova Chat</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Add your {currentProvider.toUpperCase()} API key in{' '}
-              <a href="/settings" className="underline underline-offset-2 hover:text-foreground">
-                Settings
-              </a>{' '}
-              to start chatting.
-            </p>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <p className="text-2xl font-semibold">Nova Chat</p>
-            <p className="mt-1 text-sm text-muted-foreground">Start a conversation</p>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-2xl space-y-6">
-            {messages.map((m) => {
-              const text = m.parts
-                .filter((p) => p.type === 'text')
-                .map((p) => (p as { type: 'text'; text: string }).text)
-                .join('')
+      {isNewConversation ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-4">
+          {!isWaitingForFirstResponse && (
+            <div className="text-center mb-8">
+              <p className="text-3xl font-semibold">Nova Chat</p>
+              <p className="mt-2 text-sm text-muted-foreground">Start a conversation</p>
+            </div>
+          )}
 
-              return (
-                <div
-                  key={m.id}
-                  className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                      m.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-foreground'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{text}</p>
-                  </div>
-                </div>
-              )
-            })}
-            {isLoading && (
-              <div className="flex justify-start">
+          {/* Large centered input for new conversation */}
+          <div className="w-full max-w-3xl mx-auto">
+            <form
+              onSubmit={handleSubmit}
+              className="flex items-end gap-3"
+            >
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    e.currentTarget.form?.requestSubmit()
+                  }
+                }}
+                placeholder={isWaitingForFirstResponse ? '' : 'Message Nova Chat...'}
+                disabled={!hasApiKey || isLoading}
+                rows={1}
+                className="flex-1 resize-none rounded-xl border border-border bg-muted px-6 py-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 shadow-sm"
+                style={{ maxHeight: '200px', overflowY: 'auto', minHeight: '60px' }}
+              />
+              <Button type="submit" size="default" disabled={!hasApiKey || isLoading || !inputValue.trim()} className="h-12 px-6">
+                {isLoading ? (
+                  <LoadingDots />
+                ) : (
+                  'Send'
+                )}
+              </Button>
+            </form>
+            {isWaitingForFirstResponse && (
+              <div className="flex justify-center mt-4">
                 <div className="rounded-2xl bg-muted px-4 py-2.5">
                   <LoadingDots />
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
-        )}
-      </ScrollArea>
+        </div>
+      ) : (
+        <>
+          {/* Messages */}
+          <ScrollArea className="flex-1 px-4 py-6">
+            {!hasApiKey ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <p className="text-2xl font-semibold">Nova Chat</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Add your {currentProvider.toUpperCase()} API key in{' '}
+                  <a href="/settings" className="underline underline-offset-2 hover:text-foreground">
+                    Settings
+                  </a>{' '}
+                  to start chatting.
+                </p>
+              </div>
+            ) : (
+              <div className="mx-auto max-w-2xl space-y-6">
+                {messages.map((m) => {
+                  const text = m.parts
+                    .filter((p) => p.type === 'text')
+                    .map((p) => (p as { type: 'text'; text: string }).text)
+                    .join('')
 
-      {/* Input */}
-      <div className="px-4 py-4">
-        <form
-          onSubmit={handleSubmit}
-          className="mx-auto flex max-w-2xl items-end gap-2"
-        >
-          <textarea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                e.currentTarget.form?.requestSubmit()
-              }
-            }}
-            placeholder={hasApiKey ? 'Message Nova Chat...' : `Add a ${currentProvider.toUpperCase()} API key in Settings to start`}
-            disabled={!hasApiKey}
-            rows={1}
-            className="flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-            style={{ maxHeight: '160px', overflowY: 'auto' }}
-          />
-          <Button type="submit" size="sm" disabled={!hasApiKey || isLoading || !inputValue.trim()} className="h-10 px-4">
-            Send
-          </Button>
-        </form>
-      </div>
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                          m.role === 'user'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-foreground'
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap">{text}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-2xl bg-muted px-4 py-2.5">
+                      <LoadingDots />
+                    </div>
+                  </div>
+                )}
+                <div ref={bottomRef} />
+              </div>
+            )}
+          </ScrollArea>
+
+          {/* Input */}
+          <div className="px-4 py-4">
+            <form
+              onSubmit={handleSubmit}
+              className="mx-auto flex max-w-2xl items-end gap-2"
+            >
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    e.currentTarget.form?.requestSubmit()
+                  }
+                }}
+                placeholder={hasApiKey ? 'Message Nova Chat...' : `Add a ${currentProvider.toUpperCase()} API key in Settings to start`}
+                disabled={!hasApiKey}
+                rows={1}
+                className="flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                style={{ maxHeight: '160px', overflowY: 'auto' }}
+              />
+              <Button type="submit" size="sm" disabled={!hasApiKey || isLoading || !inputValue.trim()} className="h-10 px-4">
+                Send
+              </Button>
+            </form>
+          </div>
+        </>
+      )}
     </div>
   )
 }

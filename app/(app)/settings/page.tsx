@@ -1,6 +1,6 @@
 import SettingsForm from '@/components/settings-form'
 import { createClient } from '@/lib/supabase/server'
-import { DEFAULT_MODEL } from '@/components/model-selector'
+import { DEFAULT_MODEL } from '@/lib/model-utils'
 
 export default async function SettingsPage() {
   const supabase = await createClient()

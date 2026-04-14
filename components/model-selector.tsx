@@ -1,41 +1,22 @@
 'use client'
 
+import { MODELS, DEFAULT_MODEL, getProvider, type Provider } from '@/lib/model-utils'
+
 interface ModelSelectorProps {
   value: string
   onChange: (model: string) => void
 }
 
-export type Provider = 'qwen' | 'kimi' | 'glm'
-
-export const MODELS = [
-  // GLM
-  { id: 'glm-4-flash', label: 'GLM-4 Flash', provider: 'glm' as Provider, free: true },
-  { id: 'glm-4-air', label: 'GLM-4 Air', provider: 'glm' as Provider, free: false },
-  { id: 'glm-4', label: 'GLM-4', provider: 'glm' as Provider, free: false },
-  // Qwen
-  { id: 'qwen-turbo', label: 'Qwen Turbo', provider: 'qwen' as Provider, free: false },
-  { id: 'qwen-plus', label: 'Qwen Plus', provider: 'qwen' as Provider, free: false },
-  { id: 'qwen-max', label: 'Qwen Max', provider: 'qwen' as Provider, free: false },
-  // Kimi
-  { id: 'moonshot-v1-8k', label: 'Kimi 8k', provider: 'kimi' as Provider, free: false },
-  { id: 'moonshot-v1-32k', label: 'Kimi 32k', provider: 'kimi' as Provider, free: false },
-  { id: 'moonshot-v1-128k', label: 'Kimi 128k', provider: 'kimi' as Provider, free: false },
-]
-
-export const DEFAULT_MODEL = 'glm-4-flash'
-
-export function getProvider(modelId: string): Provider {
-  return MODELS.find((m) => m.id === modelId)?.provider ?? 'glm'
-}
-
 const GROUP_LABELS: Record<Provider, string> = {
+  ollama: 'Local (Ollama)',
   glm: 'GLM (Zhipu)',
   qwen: 'Qwen (Alibaba)',
   kimi: 'Kimi (Moonshot)',
+  anthropic: 'Anthropic',
 }
 
 export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
-  const providers: Provider[] = ['glm', 'qwen', 'kimi']
+  const providers: Provider[] = ['ollama', 'glm', 'qwen', 'kimi']
 
   return (
     <select
