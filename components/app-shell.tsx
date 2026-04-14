@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 
 interface Conversation {
@@ -17,17 +18,21 @@ interface AppShellProps {
 }
 
 export default function AppShell({ conversations, userEmail, userAvatar, children }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const pathname = usePathname()
+  const isNewChatPage = pathname === '/chat'
+  const [collapsed, setCollapsed] = useState(isNewChatPage)
 
   return (
     <div className="flex h-full">
-      <Sidebar
-        conversations={conversations}
-        userEmail={userEmail}
-        userAvatar={userAvatar}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((c) => !c)}
-      />
+      {!isNewChatPage && (
+        <Sidebar
+          conversations={conversations}
+          userEmail={userEmail}
+          userAvatar={userAvatar}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+        />
+      )}
       <main className="flex flex-1 flex-col overflow-hidden">
         {children}
       </main>
